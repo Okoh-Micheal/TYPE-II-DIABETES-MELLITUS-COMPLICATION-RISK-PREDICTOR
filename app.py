@@ -17,9 +17,18 @@ st.set_page_config(
 # ── Load model ────────────────────────────────────────────────────────────────
 @st.cache_resource
 def load_model():
-    return joblib.load("champion_xgb.pkl")
+    try:
+        return joblib.load("champion_xgb.pkl")
+    except Exception:
+        import pickle
+        with open("champion_xgb.pkl", "rb") as f:
+            return pickle.load(f)
 
-model_pipeline = load_model()
+try:
+    model_pipeline = load_model()
+except Exception as e:
+    st.error("Model format mismatch. Please re-upload your champion_xgb.pkl file from your local computer.")
+    st.stop()
 
 # ── Feature name setup (must match training code exactly) ─────────────────────
 num_cols = ['Age', 'BMI', 'HbA1c_mmol', 'Systolic_BP', 'LDL_Cholesterol', 'Diabetes_Duration_Years']
