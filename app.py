@@ -34,10 +34,34 @@ except Exception as e:
 num_cols = ['Age', 'BMI', 'HbA1c_mmol', 'Systolic_BP', 'LDL_Cholesterol', 'Diabetes_Duration_Years']
 cat_cols = ['Sex', 'Ethnicity', 'Smoking_Status']
 
-preprocessor  = model_pipeline.named_steps['preprocessor']
-model_internal = model_pipeline.named_steps['classifier']
+# ── Dynamic Pipeline Step Extraction ──────────────────────────────────────────
+# Auto-detects step names to prevent naming mismatches
+step_names = [step[0] for step in model_pipeline.steps]
 
-cat_feature_names = preprocessor.named_transformers_['cat'].get_feature_names_out(cat_cols).tolist()
+if 'preprocessor' in step_names:
+    preprocessor = model_pipeline.named_steps['preprocessor']
+elif 'prep' in step_names:
+    preprocessor = model_pipeline.named_steps['prep']
+else:
+    # Fallback to grabbing the very first step in your pipeline
+    preprocessor = model_pipeline.steps[0][1]
+
+if 'classifier' in step_names:
+    model_internal = model_pipeline.named_steps['classifier']
+elif 'model' in step_names:
+    model_internal = model_pipeline.named_steps['model']
+else:
+    # Fallback to grabbing the last step in your pipeline
+    model_internal = model_pipeline.steps[-1][1]
+
+# Safely extract categorical feature names
+try:
+    cat_transformer = preprocessor.named_transformers_['cat']
+except Exception:
+    # Try alternate naming fallback
+    cat_transformer = preprocessor.transformers_[1][1]
+
+cat_feature_names = cat_transformer.get_feature_names_out(cat_cols).tolist()
 all_feature_names = num_cols + cat_feature_names
 
 # Clean display labels for SHAP chart
