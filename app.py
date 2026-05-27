@@ -7,34 +7,6 @@ import joblib
 import warnings
 warnings.filterwarnings("ignore")
 
-# ── Global Patch for XGBoost 3.1+ & SHAP Compatibility ────────────────────────
-import xgboost as xgb
-import json
-
-_orig_save_raw = xgb.Booster.save_raw
-
-def _patched_save_raw(self, *args, **kwargs):
-    res = _orig_save_raw(self, *args, **kwargs)
-    if (kwargs.get("format") == "json") or (len(args) > 0 and args[0] == "json"):
-        try:
-            model_json = json.loads(res.decode('utf-8'))
-            if "learner" in model_json and "learner_model_param" in model_json["learner"]:
-                param = model_json["learner"]["learner_model_param"]
-                if "base_score" in param:
-                    bs = param["base_score"]
-                    if isinstance(bs, list) and len(bs) > 0:
-                        param["base_score"] = float(bs[0])
-                    elif isinstance(bs, str):
-                        # Force remove text brackets like '[0.5]' so Python can read the float
-                        param["base_score"] = float(bs.strip('[]'))
-            return json.dumps(model_json).encode('utf-8')
-        except Exception:
-            pass
-    return res
-
-xgb.Booster.save_raw = _patched_save_raw
-# ─────────────────────────────────────────────────────────────────────────────
-# ─────────────────────────────────────────────────────────────────────────────
 
 # ── Page config ──────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -191,43 +163,37 @@ if st.button("🔍 Generate Risk Prediction", use_container_width=True):
     # Compute SHAP values for this patient
     transformed_patient = preprocessor.transform(patient_data)
 
-    # ── Patched save_raw for XGBoost 3.1+ & SHAP compatibility ───────────────────
-    try:
-        import json
-        booster = model_internal.get_booster() if hasattr(model_internal, "get_booster") else model_internal
-        original_save_raw = booster.save_raw
+    # ── Foolproof Patch for SHAP + XGBoost 3.1+ Compatibility ─────────────────
+    import shap.explainers._tree as shap_tree
+    import json
 
-        def patched_save_raw(*args, **kwargs):
-            raw_bytes = original_save_raw(*args, **kwargs)
-            if kwargs.get("format") == "json" or (len(args) > 0 and args[0] == "json"):
-                try:
-                    json_str = raw_bytes.decode('utf-8')
-                    model_json = json.loads(json_str)
-                    if "learner" in model_json and "learner_model_param" in model_json["learner"]:
-                        param = model_json["learner"]["learner_model_param"]
-                        if "base_score" in param:
-                            bs = param["base_score"]
-                            if isinstance(bs, list) and len(bs) > 0:
-                                param["base_score"] = str(bs[0])
-                            elif isinstance(bs, str) and bs.startswith('[') and bs.endswith(']'):
-                                param["base_score"] = bs.strip('[]')
-                    return json.dumps(model_json).encode('utf-8')
-                except Exception:
-                    import re
-                    json_str = raw_bytes.decode('utf-8')
-                    json_str = re.sub(r'"base_score"\s*:\s*\[([^\]]+)\]', r'"base_score": \1', json_str)
-                    return json_str.encode('utf-8')
-            return raw_bytes
+    _orig_loads = shap_tree.json.loads
 
-        booster.save_raw = patched_save_raw
-        if hasattr(model_internal, "save_raw"):
-            model_internal.save_raw = patched_save_raw
-    except Exception:
-        pass
-        
+    def _patched_loads(s, *args, **kwargs):
+        obj = _orig_loads(s, *args, **kwargs)
+        try:
+            if isinstance(obj, dict) and "learner" in obj:
+                if "learner_model_param" in obj["learner"]:
+                    param = obj["learner"]["learner_model_param"]
+                    if "base_score" in param:
+                        bs = param["base_score"]
+                        if isinstance(bs, str):
+                            # Strips away any string brackets like '[0.5]'
+                            param["base_score"] = bs.strip('[]')
+                        elif isinstance(bs, list) and len(bs) > 0:
+                            param["base_score"] = str(bs[0])
+        except Exception:
+            pass
+        return obj
+
+    shap_tree.json.loads = _patched_loads
+    # ─────────────────────────────────────────────────────────────────────────
+
+    # Now call the explainer safely
     explainer    = shap.TreeExplainer(model_internal)
     shap_values  = explainer.shap_values(transformed_patient)
 
+    
     # Handle both old (list) and new (array) SHAP output formats
     if isinstance(shap_values, list):
         sv = shap_values[1][0]
