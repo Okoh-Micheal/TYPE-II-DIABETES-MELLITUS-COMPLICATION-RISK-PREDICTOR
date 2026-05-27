@@ -108,7 +108,8 @@ if st.button("🔍 Generate Risk Prediction", use_container_width=True):
 
     # Predict
     risk_prob = model_pipeline.predict_proba(patient_data)[0][1]
-    risk_pct  = round(risk_prob * 100, 1)
+    # Adding float() forces Python to drop the weird machine-learning decimal trailing numbers
+    risk_pct  = round(float(risk_prob) * 100, 1)
 
     # ── Risk tier display ─────────────────────────────────────────────────────
     st.subheader("Predicted Complication Risk")
@@ -160,6 +161,41 @@ if st.button("🔍 Generate Risk Prediction", use_container_width=True):
 
     # Compute SHAP values for this patient
     transformed_patient = preprocessor.transform(patient_data)
+
+    # ── Patched save_raw for XGBoost 3.1+ & SHAP compatibility ───────────────────
+    try:
+        import json
+        booster = model_internal.get_booster() if hasattr(model_internal, "get_booster") else model_internal
+        original_save_raw = booster.save_raw
+
+        def patched_save_raw(*args, **kwargs):
+            raw_bytes = original_save_raw(*args, **kwargs)
+            if kwargs.get("format") == "json" or (len(args) > 0 and args[0] == "json"):
+                try:
+                    json_str = raw_bytes.decode('utf-8')
+                    model_json = json.loads(json_str)
+                    if "learner" in model_json and "learner_model_param" in model_json["learner"]:
+                        param = model_json["learner"]["learner_model_param"]
+                        if "base_score" in param:
+                            bs = param["base_score"]
+                            if isinstance(bs, list) and len(bs) > 0:
+                                param["base_score"] = str(bs[0])
+                            elif isinstance(bs, str) and bs.startswith('[') and bs.endswith(']'):
+                                param["base_score"] = bs.strip('[]')
+                    return json.dumps(model_json).encode('utf-8')
+                except Exception:
+                    import re
+                    json_str = raw_bytes.decode('utf-8')
+                    json_str = re.sub(r'"base_score"\s*:\s*\[([^\]]+)\]', r'"base_score": \1', json_str)
+                    return json_str.encode('utf-8')
+            return raw_bytes
+
+        booster.save_raw = patched_save_raw
+        if hasattr(model_internal, "save_raw"):
+            model_internal.save_raw = patched_save_raw
+    except Exception:
+        pass
+        
     explainer    = shap.TreeExplainer(model_internal)
     shap_values  = explainer.shap_values(transformed_patient)
 
