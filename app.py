@@ -15,32 +15,10 @@ st.set_page_config(
 )
 
 # ── Load model ────────────────────────────────────────────────────────────────
+# ── Load model ────────────────────────────────────────────────────────────────
 @st.cache_resource
 def load_model():
-    pipeline = joblib.load("champion_xgb.pkl")
-    
-    # ── DIRECT BASE_SCORE FIX FOR XGBOOST 3.1+ / SHAP COMPATIBILITY ──────────
-    # XGBoost 3.1+ stores base_score as '[value]' (with brackets).
-    # SHAP's TreeExplainer calls float() on this string and crashes.
-    # Fix: extract the booster, strip the brackets from the config, reload it.
-    classifier = pipeline.named_steps['classifier']
-    booster = classifier.get_booster()
-    
-    try:
-        cfg = json.loads(booster.save_config())
-        param = cfg['learner']['learner_model_param']
-        if 'base_score' in param:
-            bs = param['base_score']
-            if isinstance(bs, str):
-                param['base_score'] = bs.strip('[]')
-            elif isinstance(bs, list):
-                param['base_score'] = str(bs[0]).strip('[]')
-        booster.load_config(json.dumps(cfg))
-    except Exception:
-        pass
-    # ── END FIX ───────────────────────────────────────────────────────────────
-    
-    return pipeline
+    return joblib.load("champion_xgb.pkl")
 
 model_pipeline = load_model()
 
@@ -166,8 +144,9 @@ if st.button("🔍 Generate Risk Prediction", use_container_width=True):
         unsafe_allow_html=True
     )
 
-    # ── SHAP explanation ──────────────────────────────────────────────────────
+   # ── SHAP explanation ──────────────────────────────────────────────────────
     import shap
+    import re
 
     st.subheader("Why did the model give this score?")
     st.markdown(
@@ -178,10 +157,28 @@ if st.button("🔍 Generate Risk Prediction", use_container_width=True):
 
     transformed_patient = preprocessor.transform(patient_data)
 
-    # Use the booster directly — the base_score fix was already applied at load time
-    explainer   = shap.TreeExplainer(model_internal.get_booster())
-    shap_values = explainer.shap_values(transformed_patient)
+    # ── THE BULLETPROOF REGEX PATCH ──────────────────────────────────────────
+    booster = model_internal.get_booster()
+    original_save_config = booster.save_config
 
+    def patched_save_config(*args, **kwargs):
+        cfg_json = original_save_config(*args, **kwargs)
+        
+        # Handle both string and byte formats securely
+        if isinstance(cfg_json, bytes):
+            cfg_str = cfg_json.decode('utf-8')
+            # Finds "base_score": "[value]" and replaces it with "base_score": "value"
+            cfg_str = re.sub(r'"base_score":\s*"\[([^\]]+)\]"', r'"base_score": "\1"', cfg_str)
+            return cfg_str.encode('utf-8')
+        else:
+            return re.sub(r'"base_score":\s*"\[([^\]]+)\]"', r'"base_score": "\1"', cfg_json)
+            
+    # Bind the patched method directly to the booster before handing it to SHAP
+    booster.save_config = patched_save_config
+    # ─────────────────────────────────────────────────────────────────────────
+
+    explainer   = shap.TreeExplainer(booster)
+    shap_values = explainer.shap_values(transformed_patient)
     if isinstance(shap_values, list):
         sv = shap_values[1][0]
     else:
