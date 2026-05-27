@@ -171,7 +171,7 @@ if st.button("🔍 Generate Risk Prediction", use_container_width=True):
 
    # ── SHAP explanation ──────────────────────────────────────────────────────
     import shap
-    import re
+    import json
 
     st.subheader("Why did the model give this score?")
     st.markdown(
@@ -182,10 +182,27 @@ if st.button("🔍 Generate Risk Prediction", use_container_width=True):
 
     transformed_patient = preprocessor.transform(patient_data)
 
-    # Pass the underlying classifier model directly (which now holds the patched booster memory)
+    # ── SAFE DICTIONARY INTERCEPTOR FOR LINUX/CLOUD ENVIRONMENT ──────────────
+    # We override how SHAP's underlying loader reads the raw model parameter dictionary
+    from shap.explainers._tree import XGBTreeModelLoader
+    
+    _orig_init = XGBTreeModelLoader.__init__
+    
+    def _patched_init(self, model, *args, **kwargs):
+        # Let the original loader pull the data into memory first
+        _orig_init(self, model, *args, **kwargs)
+        # Force-strip the C++ text brackets if they exist on the Linux cloud instance
+        if hasattr(self, 'base_score') and isinstance(self.base_score, str):
+            self.base_score = float(self.base_score.strip('[]'))
+        elif hasattr(self, 'base_score') and isinstance(self.base_score, list):
+            self.base_score = float(str(self.base_score[0]).strip('[]'))
+            
+    XGBTreeModelLoader.__init__ = _patched_init
+    # ─────────────────────────────────────────────────────────────────────────
+
+    # Pass the underlying classifier model directly
     explainer   = shap.TreeExplainer(model_internal)
     shap_values = explainer.shap_values(transformed_patient)
-
     
     if isinstance(shap_values, list):
         sv = shap_values[1][0]
