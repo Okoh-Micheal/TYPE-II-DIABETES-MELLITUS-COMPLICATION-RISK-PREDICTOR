@@ -20,15 +20,20 @@ def _patched_save_raw(self, *args, **kwargs):
             model_json = json.loads(res.decode('utf-8'))
             if "learner" in model_json and "learner_model_param" in model_json["learner"]:
                 param = model_json["learner"]["learner_model_param"]
-                if "base_score" in param and isinstance(param["base_score"], list):
-                    # Flatten the new XGBoost list format so SHAP can read it as a float
-                    param["base_score"] = param["base_score"][0]
+                if "base_score" in param:
+                    bs = param["base_score"]
+                    if isinstance(bs, list) and len(bs) > 0:
+                        param["base_score"] = float(bs[0])
+                    elif isinstance(bs, str):
+                        # Force remove text brackets like '[0.5]' so Python can read the float
+                        param["base_score"] = float(bs.strip('[]'))
             return json.dumps(model_json).encode('utf-8')
         except Exception:
             pass
     return res
 
 xgb.Booster.save_raw = _patched_save_raw
+# ─────────────────────────────────────────────────────────────────────────────
 # ─────────────────────────────────────────────────────────────────────────────
 
 # ── Page config ──────────────────────────────────────────────────────────────
