@@ -7,6 +7,55 @@ import joblib
 import warnings
 warnings.filterwarnings("ignore")
 
+# =========================================================================
+# CRITICAL COMPATIBILITY PATCH FOR SHAP + XGBOOST 3.1+
+# =========================================================================
+import json
+import xgboost as xgb
+import shap.explainers._tree as shap_tree
+
+# 1. Recursive cleaner to strip brackets from 'base_score' no matter where it hides
+def _clean_base_score(obj):
+    if isinstance(obj, dict):
+        if "base_score" in obj:
+            bs = obj["base_score"]
+            if isinstance(bs, str):
+                obj["base_score"] = bs.strip('[]')
+            elif isinstance(bs, list) and len(bs) > 0:
+                obj["base_score"] = str(bs[0]).strip('[]')
+        for k, v in obj.items():
+            _clean_base_score(v)
+    elif isinstance(obj, list):
+        for item in obj:
+            _clean_base_score(item)
+
+# 2. Create the intercepted json.loads function
+_orig_json_loads = json.loads
+def _patched_json_loads(s, *args, **kwargs):
+    obj = _orig_json_loads(s, *args, **kwargs)
+    _clean_base_score(obj)
+    return obj
+
+# 3. Inject the patch into every possible namespace SHAP could be using
+json.loads = _patched_json_loads
+if hasattr(shap_tree, 'loads'):
+    shap_tree.loads = _patched_json_loads
+if hasattr(shap_tree, 'json') and hasattr(shap_tree.json, 'loads'):
+    shap_tree.json.loads = _patched_json_loads
+
+# 4. Intercept XGBoost's config exporter directly as a final line of defense
+_orig_save_config = xgb.Booster.save_config
+def _patched_save_config(self, *args, **kwargs):
+    cfg_str = _orig_save_config(self, *args, **kwargs)
+    try:
+        cfg_dict = _orig_json_loads(cfg_str)
+        _clean_base_score(cfg_dict)
+        return json.dumps(cfg_dict)
+    except Exception:
+        return cfg_str
+xgb.Booster.save_config = _patched_save_config
+# =========================================================================
+
 
 # ── Page config ──────────────────────────────────────────────────────────────
 st.set_page_config(
