@@ -182,22 +182,33 @@ if st.button("🔍 Generate Risk Prediction", use_container_width=True):
 
     transformed_patient = preprocessor.transform(patient_data)
 
-    # ── SAFE DICTIONARY INTERCEPTOR FOR LINUX/CLOUD ENVIRONMENT ──────────────
-    # We override how SHAP's underlying loader reads the raw model parameter dictionary
-    from shap.explainers._tree import XGBTreeModelLoader
-    
-    _orig_init = XGBTreeModelLoader.__init__
-    
-    def _patched_init(self, model, *args, **kwargs):
-        # Let the original loader pull the data into memory first
-        _orig_init(self, model, *args, **kwargs)
-        # Force-strip the C++ text brackets if they exist on the Linux cloud instance
-        if hasattr(self, 'base_score') and isinstance(self.base_score, str):
-            self.base_score = float(self.base_score.strip('[]'))
-        elif hasattr(self, 'base_score') and isinstance(self.base_score, list):
-            self.base_score = float(str(self.base_score[0]).strip('[]'))
-            
-    XGBTreeModelLoader.__init__ = _patched_init
+    # ── TARGETED JSON INTERCEPT FOR SHAP LIBRARIES ───────────────────────────
+    # We replace the JSON decoder specifically inside SHAP's tree explainer module
+    import shap.explainers._tree as shap_tree
+
+    _orig_loads = json.loads
+
+    def _clean_json_loads(s, *args, **kwargs):
+        # Decode the string into a standard Python dictionary/list structure
+        obj = _orig_loads(s, *args, **kwargs)
+        
+        # Recursively search the decoded structure for any 'base_score' with brackets
+        def _clean_dict(d):
+            if isinstance(d, dict):
+                if "base_score" in d and isinstance(d["base_score"], str):
+                    d["base_score"] = d["base_score"].strip('[]')
+                for k, v in d.items():
+                    _clean_dict(v)
+            elif isinstance(d, list):
+                for item in d:
+                    _clean_dict(item)
+                    
+        _clean_dict(obj)
+        return obj
+
+    # Inject our cleaner function right into the global json module and SHAP's space
+    json.loads = _clean_json_loads
+    shap_tree.json.loads = _clean_json_loads
     # ─────────────────────────────────────────────────────────────────────────
 
     # Pass the underlying classifier model directly
