@@ -7,6 +7,30 @@ import joblib
 import warnings
 warnings.filterwarnings("ignore")
 
+# ── Global Patch for XGBoost 3.1+ & SHAP Compatibility ────────────────────────
+import xgboost as xgb
+import json
+
+_orig_save_raw = xgb.Booster.save_raw
+
+def _patched_save_raw(self, *args, **kwargs):
+    res = _orig_save_raw(self, *args, **kwargs)
+    if (kwargs.get("format") == "json") or (len(args) > 0 and args[0] == "json"):
+        try:
+            model_json = json.loads(res.decode('utf-8'))
+            if "learner" in model_json and "learner_model_param" in model_json["learner"]:
+                param = model_json["learner"]["learner_model_param"]
+                if "base_score" in param and isinstance(param["base_score"], list):
+                    # Flatten the new XGBoost list format so SHAP can read it as a float
+                    param["base_score"] = param["base_score"][0]
+            return json.dumps(model_json).encode('utf-8')
+        except Exception:
+            pass
+    return res
+
+xgb.Booster.save_raw = _patched_save_raw
+# ─────────────────────────────────────────────────────────────────────────────
+
 # ── Page config ──────────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="T2DM Complication Risk Predictor",
