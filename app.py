@@ -15,10 +15,35 @@ st.set_page_config(
 )
 
 # ── Load model ────────────────────────────────────────────────────────────────
-# ── Load model ────────────────────────────────────────────────────────────────
 @st.cache_resource
 def load_model():
-    return joblib.load("champion_xgb.pkl")
+    pipeline = joblib.load("champion_xgb.pkl")
+    
+    # Extract the internal booster
+    classifier = pipeline.named_steps['classifier']
+    booster = classifier.get_booster()
+    
+    # ── FORCE CLEAN BOOSTER INTERNAL CONFIG MEMORY ───────────────────────────
+    import json
+    try:
+        # 1. Grab the raw internal JSON dump
+        cfg = json.loads(booster.save_config())
+        
+        # 2. Safely strip the text brackets from the base_score string
+        param = cfg['learner']['learner_model_param']
+        if 'base_score' in param and isinstance(param['base_score'], str):
+            param['base_score'] = param['base_score'].strip('[]')
+            
+        # 3. Force the booster to load this cleaned config state back into memory
+        booster.load_config(json.dumps(cfg))
+        
+        # 4. Bind the cleaned booster back to the classifier step
+        classifier._Booster = booster
+    except Exception:
+        pass
+    # ─────────────────────────────────────────────────────────────────────────
+    
+    return pipeline
 
 model_pipeline = load_model()
 
@@ -157,28 +182,11 @@ if st.button("🔍 Generate Risk Prediction", use_container_width=True):
 
     transformed_patient = preprocessor.transform(patient_data)
 
-    # ── THE BULLETPROOF REGEX PATCH ──────────────────────────────────────────
-    booster = model_internal.get_booster()
-    original_save_config = booster.save_config
-
-    def patched_save_config(*args, **kwargs):
-        cfg_json = original_save_config(*args, **kwargs)
-        
-        # Handle both string and byte formats securely
-        if isinstance(cfg_json, bytes):
-            cfg_str = cfg_json.decode('utf-8')
-            # Finds "base_score": "[value]" and replaces it with "base_score": "value"
-            cfg_str = re.sub(r'"base_score":\s*"\[([^\]]+)\]"', r'"base_score": "\1"', cfg_str)
-            return cfg_str.encode('utf-8')
-        else:
-            return re.sub(r'"base_score":\s*"\[([^\]]+)\]"', r'"base_score": "\1"', cfg_json)
-            
-    # Bind the patched method directly to the booster before handing it to SHAP
-    booster.save_config = patched_save_config
-    # ─────────────────────────────────────────────────────────────────────────
-
-    explainer   = shap.TreeExplainer(booster)
+    # Pass the underlying classifier model directly (which now holds the patched booster memory)
+    explainer   = shap.TreeExplainer(model_internal)
     shap_values = explainer.shap_values(transformed_patient)
+
+    
     if isinstance(shap_values, list):
         sv = shap_values[1][0]
     else:
