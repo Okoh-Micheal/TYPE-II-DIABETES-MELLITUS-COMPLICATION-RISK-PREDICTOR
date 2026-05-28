@@ -6,7 +6,7 @@ Predicting diabetes complications shouldn't be a mystery. I built this to show t
 > **An end-to-end clinical data pipeline predicting 3–5 year complication risk for Type 2 Diabetes patients — combining SQL analytics, Power BI dashboards, XGBoost + SHAP explainability, and a live Streamlit clinical decision-support app. Validated against NICE NG28 guidelines.**
 
 <img width="100" height="100" alt="streamlit-logo-png_seeklogo-441815" src="https://github.com/user-attachments/assets/9c7fe8c7-46b5-4b74-8816-6d0dc3e9e125" />
-https://type-ii-diabetes-mellitus-complication-risk-predictor-matexjya.streamlit.app/
+https://type-ii-diabetes-mellitus-complication-risk-predictor-pztic3bt.streamlit.app/
 <img width="112" height="112" alt="python" src="https://github.com/user-attachments/assets/e48653ed-c169-4ebc-a755-512444ee9df8" />
 <img width="112" height="112" alt="database" src="https://github.com/user-attachments/assets/ac80778d-ff2f-4016-88a3-5a157a8847ab" />
 <img width="115" height="115" alt="download (1)" src="https://github.com/user-attachments/assets/b5410b21-7407-4f4e-85d6-7b95a77918ef" />
@@ -109,7 +109,7 @@ t2dm-complication-risk-predictor/
 
 ## 🚀 Live Demo
 
-The Streamlit app is deployed at: https://type-ii-diabetes-mellitus-complication-risk-predictor-matexjya.streamlit.app/
+The Streamlit app is deployed at: https://type-ii-diabetes-mellitus-complication-risk-predictor-pztic3bt.streamlit.app/
 
 Enter a patient's clinical profile (Age, HbA1c, BMI, Blood Pressure, Smoking Status, Ethnicity, Diabetes Duration, LDL Cholesterol) and receive:
 
@@ -210,8 +210,8 @@ The dashboard's 0.3 and 0.7 risk thresholds are identical to those in the Stream
 **Okoh Micheal Oseghale**
 MSc Data Science · University of East London · February 2026
 
-[![LinkedIn](https://img.shields.io/badge/LinkedIn-Connect-blue)](https://linkedin.com/in/your-profile)
-[![GitHub](https://img.shields.io/badge/GitHub-Follow-black)](https://github.com/your-username)
+[![LinkedIn]www.linkedin.com/in/micheal-okoh-222970265
+[![GitHub](https://img.shields.io/badge/GitHub-Follow-black)](https://github.com/Okoh-Micheal/)
 
 ---
 
